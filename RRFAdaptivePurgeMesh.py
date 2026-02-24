@@ -9,10 +9,40 @@ class RRFAdaptivePurgeMesh(Script):
             "key": "RRFAdaptivePurgeMesh",
             "metadata": {},
             "version": 2,
-            "settings": {}
+            "settings": {
+                "x_offset": {
+                    "label": "X Offset (mm)",
+                    "description": "Distance to the left of the first layer.",
+                    "type": "float",
+                    "default_value": 10.0
+                },
+                "purge_distance": {
+                    "label": "Purge Distance (mm)",
+                    "description": "Length of the purge line or triangle sides.",
+                    "type": "float",
+                    "default_value": 30.0
+                },
+                "purge_shape": {
+                    "label": "Purge Shape",
+                    "description": "Select the purge geometry.",
+                    "type": "enum",
+                    "options": {
+                        "Line": "Line",
+                        "Triangle": "Triangle"
+                    },
+                    "default_value": "Line"
+                }
+            }
         }"""
 
     def execute(self, data):
+        x_offset = float(self.getSettingValueByKey("x_offset"))
+        p_dist = float(self.getSettingValueByKey("purge_distance"))
+        p_shape_str = self.getSettingValueByKey("purge_shape")
+        
+        # Explicit String to Int conversion for RRF
+        p_shape = 1 if p_shape_str == "Triangle" else 0
+
         min_x, max_x = 9999.0, -9999.0
         min_y, max_y = 9999.0, -9999.0
         bed_x, bed_y = 300.0, 300.0
@@ -25,6 +55,7 @@ class RRFAdaptivePurgeMesh(Script):
         
         for layer in data:
             if ";LAYER:0" in layer: parsing_layer_0 = True
+            elif ";LAYER:1" in layer: parsing_layer_0 = False
             
             for line in layer.split("\n"):
                 if ";BED_LIMITS" in line:
@@ -42,15 +73,12 @@ class RRFAdaptivePurgeMesh(Script):
         if not found_model:
             return data
 
-        # Calculate purge: 10mm left of model. Clamp to 0.5 to stay on bed.
-        purge_x = max(0.5, min_x - 10.0)
+        purge_x = max(0.5, min_x - x_offset)
         purge_y = min_y
         
-        # Mesh with 10mm padding, clamped to bed size
         m_min_x, m_max_x = max(10.0, min_x - 10), min(bed_x - 10, max_x + 10)
         m_min_y, m_max_y = max(10.0, min_y - 10), min(bed_y - 10, max_y + 10)
         
-        # Spacing logic (same as your original adaptive mesh)
         spacing = 50
         x_span, y_span = m_max_x - m_min_x, m_max_y - m_min_y
         if x_span < spacing: spacing = x_span / 2
@@ -61,6 +89,8 @@ class RRFAdaptivePurgeMesh(Script):
             f"; --- RRF ADAPTIVE DATA ---\n"
             f"set global.purge_x = {purge_x:.3f}\n"
             f"set global.purge_y = {purge_y:.3f}\n"
+            f"set global.purge_dist = {p_dist:.3f}\n"
+            f"set global.purge_shape = {p_shape}\n"
             f"M557 X{m_min_x:.1f}:{m_max_x:.1f} Y{m_min_y:.1f}:{m_max_y:.1f} S{spacing}\n"
             f"; -------------------------\n"
         )
